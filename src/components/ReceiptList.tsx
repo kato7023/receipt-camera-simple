@@ -138,7 +138,7 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
     }
   }, [selectedIds, receipts, loadReceipts]);
 
-  // カメラロールに保存
+  // カメラロールに保存（Web Share API経由）
   const handleSaveToPhotos = useCallback(async () => {
     if (selectedIds.size === 0) return;
 
@@ -146,23 +146,35 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
       (r) => r.id !== undefined && selectedIds.has(r.id)
     );
 
-    for (const receipt of selectedReceipts) {
-      const url = URL.createObjectURL(receipt.image);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipt_${receipt.id}.jpg`;
-      a.click();
-      URL.revokeObjectURL(url);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    }
+    const files: File[] = selectedReceipts.map(
+      (r) =>
+        new File([r.image], `receipt_${r.id}.jpg`, {
+          type: r.image.type || 'image/jpeg',
+        })
+    );
 
-    // 保存済みにマーク
-    for (const id of selectedIds) {
-      await updateReceiptSaved(id, true);
+    try {
+      if (navigator.share && navigator.canShare({ files })) {
+        await navigator.share({
+          title: `領収書 ${files.length}枚を保存`,
+          files,
+        });
+
+        // 共有シートが正常に完了 → 保存済みにマーク
+        for (const id of selectedIds) {
+          await updateReceiptSaved(id, true);
+        }
+        setSelectedIds(new Set());
+        setSelectMode(false);
+        loadReceipts();
+      } else {
+        alert('このブラウザではファイルの共有に対応していません');
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        console.error('保存に失敗:', err);
+      }
     }
-    setSelectedIds(new Set());
-    setSelectMode(false);
-    loadReceipts();
   }, [selectedIds, receipts, loadReceipts]);
 
   // 一括削除
