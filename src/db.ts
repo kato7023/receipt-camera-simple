@@ -6,6 +6,7 @@ export interface Receipt {
   thumbnail: Blob;
   createdAt: Date;
   status: 'unsent' | 'sent';
+  saved: boolean;
   memo: string;
 }
 
@@ -16,6 +17,15 @@ class ReceiptDB extends Dexie {
     super('ReceiptCameraDB');
     this.version(1).stores({
       receipts: '++id, createdAt, status',
+    });
+    this.version(2).stores({
+      receipts: '++id, createdAt, status, saved',
+    }).upgrade((tx) => {
+      return tx.table('receipts').toCollection().modify((receipt) => {
+        if (receipt.saved === undefined) {
+          receipt.saved = false;
+        }
+      });
     });
   }
 }
@@ -71,6 +81,7 @@ export async function saveReceipt(imageBlob: Blob): Promise<number> {
     thumbnail,
     createdAt: new Date(),
     status: 'unsent',
+    saved: false,
     memo: '',
   });
   return id as number;
@@ -97,8 +108,25 @@ export async function updateReceiptMemo(
 }
 
 /**
+ * 領収書の保存状態を更新する
+ */
+export async function updateReceiptSaved(
+  id: number,
+  saved: boolean
+): Promise<void> {
+  await db.receipts.update(id, { saved });
+}
+
+/**
  * 領収書を削除する
  */
 export async function deleteReceipt(id: number): Promise<void> {
   await db.receipts.delete(id);
+}
+
+/**
+ * 領収書を一括削除する
+ */
+export async function deleteReceipts(ids: number[]): Promise<void> {
+  await db.receipts.bulkDelete(ids);
 }

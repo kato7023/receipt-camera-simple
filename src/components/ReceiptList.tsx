@@ -1,30 +1,44 @@
 import { useState, useEffect, useCallback } from 'react';
-import { db, updateReceiptStatus, type Receipt } from '../db';
+import { db, updateReceiptStatus, updateReceiptSaved, deleteReceipts, type Receipt } from '../db';
 
 interface ReceiptListProps {
   onSelect: (receipt: Receipt) => void;
   refreshKey: number;
 }
 
-type FilterType = 'all' | 'unsent' | 'sent';
+type FilterType = 'unsent' | 'unsaved' | 'sent' | 'all';
 
 export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [filter, setFilter] = useState<FilterType>('all');
+  const [allReceipts, setAllReceipts] = useState<Receipt[]>([]);
+  const [filter, setFilter] = useState<FilterType>('unsent');
   const [thumbnailUrls, setThumbnailUrls] = useState<Map<number, string>>(
     new Map()
   );
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSharing, setIsSharing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const loadReceipts = useCallback(async () => {
     const query = db.receipts.orderBy('createdAt').reverse();
-    const allReceipts = await query.toArray();
-    const filtered =
-      filter === 'all'
-        ? allReceipts
-        : allReceipts.filter((r) => r.status === filter);
+    const all = await query.toArray();
+    setAllReceipts(all);
+
+    let filtered: Receipt[];
+    switch (filter) {
+      case 'unsent':
+        filtered = all.filter((r) => r.status === 'unsent');
+        break;
+      case 'unsaved':
+        filtered = all.filter((r) => !r.saved);
+        break;
+      case 'sent':
+        filtered = all.filter((r) => r.status === 'sent');
+        break;
+      default:
+        filtered = all;
+    }
     setReceipts(filtered);
 
     // サムネイルURLを生成
@@ -35,7 +49,6 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
         urls.set(receipt.id, url);
       }
     }
-    // 前回のURLをクリーンアップ
     setThumbnailUrls((prev) => {
       prev.forEach((url) => URL.revokeObjectURL(url));
       return urls;
@@ -46,7 +59,6 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
     loadReceipts();
   }, [loadReceipts, refreshKey]);
 
-  // クリーンアップ
   useEffect(() => {
     return () => {
       thumbnailUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -57,6 +69,7 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
   const toggleSelectMode = () => {
     if (selectMode) {
       setSelectedIds(new Set());
+      setShowDeleteConfirm(false);
     }
     setSelectMode(!selectMode);
   };
@@ -72,14 +85,15 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
       }
       return next;
     });
+    setShowDeleteConfirm(false);
   };
 
-  // 未送信をすべて選択
-  const selectAllUnsent = () => {
-    const unsentIds = receipts
-      .filter((r) => r.status === 'unsent' && r.id !== undefined)
+  // 表示中の全件を選択
+  const selectAll = () => {
+    const ids = receipts
+      .filter((r) => r.id !== undefined)
       .map((r) => r.id as number);
-    setSelectedIds(new Set(unsentIds));
+    setSelectedIds(new Set(ids));
   };
 
   // まとめてLINE送信
@@ -106,7 +120,6 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
           files,
         });
 
-        // 共有成功 → 送信済みにマーク
         for (const id of selectedIds) {
           await updateReceiptStatus(id, 'sent');
         }
@@ -140,10 +153,27 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
       a.download = `receipt_${receipt.id}.jpg`;
       a.click();
       URL.revokeObjectURL(url);
-      // ダウンロード間に少し待つ
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
-  }, [selectedIds, receipts]);
+
+    // 保存済みにマーク
+    for (const id of selectedIds) {
+      await updateReceiptSaved(id, true);
+    }
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    loadReceipts();
+  }, [selectedIds, receipts, loadReceipts]);
+
+  // 一括削除
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    await deleteReceipts(Array.from(selectedIds));
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    setShowDeleteConfirm(false);
+    loadReceipts();
+  }, [selectedIds, loadReceipts]);
 
   const formatDate = (date: Date) => {
     const d = new Date(date);
@@ -154,8 +184,10 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
     return `${month}/${day} ${hours}:${minutes}`;
   };
 
-  const unsentCount = receipts.filter((r) => r.status === 'unsent').length;
-  const sentCount = receipts.filter((r) => r.status === 'sent').length;
+  // カウント（全データから）
+  const unsentCount = allReceipts.filter((r) => r.status === 'unsent').length;
+  const unsavedCount = allReceipts.filter((r) => !r.saved).length;
+  const sentCount = allReceipts.filter((r) => r.status === 'sent').length;
 
   return (
     <div className="receipt-list">
@@ -170,22 +202,15 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
         {selectMode && (
           <button
             className="select-all-button"
-            onClick={selectAllUnsent}
+            onClick={selectAll}
           >
-            未送信を全選択
+            全選択
           </button>
         )}
       </div>
 
       {/* フィルタータブ */}
       <div className="filter-tabs">
-        <button
-          className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
-          onClick={() => setFilter('all')}
-        >
-          すべて
-          <span className="filter-count">{receipts.length}</span>
-        </button>
         <button
           className={`filter-tab ${filter === 'unsent' ? 'active' : ''}`}
           onClick={() => setFilter('unsent')}
@@ -194,11 +219,25 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
           <span className="filter-count unsent">{unsentCount}</span>
         </button>
         <button
+          className={`filter-tab ${filter === 'unsaved' ? 'active' : ''}`}
+          onClick={() => setFilter('unsaved')}
+        >
+          未保存
+          <span className="filter-count unsaved">{unsavedCount}</span>
+        </button>
+        <button
           className={`filter-tab ${filter === 'sent' ? 'active' : ''}`}
           onClick={() => setFilter('sent')}
         >
-          送信済み
+          送信済
           <span className="filter-count sent">{sentCount}</span>
+        </button>
+        <button
+          className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
+          onClick={() => setFilter('all')}
+        >
+          すべて
+          <span className="filter-count">{allReceipts.length}</span>
         </button>
       </div>
 
@@ -226,7 +265,9 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
               ? '領収書がまだありません'
               : filter === 'unsent'
                 ? '未送信の領収書はありません'
-                : '送信済みの領収書はありません'}
+                : filter === 'unsaved'
+                  ? '未保存の領収書はありません'
+                  : '送信済みの領収書はありません'}
           </p>
           <p className="empty-hint">カメラタブから撮影してください</p>
         </div>
@@ -257,11 +298,14 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
                     {selectedIds.has(receipt.id!) && '✓'}
                   </span>
                 ) : (
-                  <span
-                    className={`status-badge ${receipt.status}`}
-                  >
-                    {receipt.status === 'unsent' ? '未送信' : '送信済み'}
-                  </span>
+                  <div className="card-badges">
+                    <span className={`status-badge ${receipt.status}`}>
+                      {receipt.status === 'unsent' ? '未送信' : '送信済'}
+                    </span>
+                    {!receipt.saved && (
+                      <span className="status-badge unsaved">未保存</span>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="receipt-card-info">
@@ -284,34 +328,63 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
         <div className="batch-action-bar">
           <span className="batch-count">{selectedIds.size}枚 選択中</span>
           <div className="batch-buttons">
-            <button
-              className="batch-button save-button"
-              onClick={handleSaveToPhotos}
-              title="カメラロールに保存"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              保存
-            </button>
-            <button
-              className="batch-button share-button"
-              onClick={handleBatchShare}
-              disabled={isSharing}
-            >
-              {isSharing ? (
-                <div className="shutter-spinner small" />
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                  <polyline points="16 6 12 2 8 6" />
-                  <line x1="12" y1="2" x2="12" y2="15" />
-                </svg>
-              )}
-              LINE送信
-            </button>
+            {showDeleteConfirm ? (
+              <>
+                <button
+                  className="batch-button delete-confirm-button"
+                  onClick={handleBatchDelete}
+                >
+                  削除する
+                </button>
+                <button
+                  className="batch-button cancel-button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                >
+                  取消
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="batch-button delete-button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  title="削除"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </button>
+                <button
+                  className="batch-button save-button"
+                  onClick={handleSaveToPhotos}
+                  title="カメラロールに保存"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  保存
+                </button>
+                <button
+                  className="batch-button share-button"
+                  onClick={handleBatchShare}
+                  disabled={isSharing}
+                >
+                  {isSharing ? (
+                    <div className="shutter-spinner small" />
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                      <polyline points="16 6 12 2 8 6" />
+                      <line x1="12" y1="2" x2="12" y2="15" />
+                    </svg>
+                  )}
+                  LINE送信
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

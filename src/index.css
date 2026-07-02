@@ -532,6 +532,29 @@ body {
   right: 6px;
 }
 
+.card-badges {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+
+.card-badges .status-badge {
+  position: static;
+}
+
+.status-badge.unsaved {
+  background: var(--accent-red-subtle);
+  color: var(--accent-red);
+}
+
+.filter-count.unsaved {
+  color: var(--accent-red);
+}
+
 .receipt-card-info {
   padding: var(--space-sm);
   display: flex;
@@ -712,6 +735,24 @@ body {
   width: 16px;
   height: 16px;
   border-width: 2px;
+}
+
+.batch-button.delete-button {
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
+  padding: var(--space-sm);
+}
+
+.batch-button.delete-confirm-button {
+  background: var(--accent-red);
+  color: white;
+}
+
+.batch-button.cancel-button {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
 }
 
 /* ---------- Receipt Detail (Overlay) ---------- */
