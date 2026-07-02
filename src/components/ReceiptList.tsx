@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { db, type Receipt } from '../db';
+import { db, updateReceiptStatus, type Receipt } from '../db';
 
 interface ReceiptListProps {
   onSelect: (receipt: Receipt) => void;
@@ -14,9 +14,12 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
   const [thumbnailUrls, setThumbnailUrls] = useState<Map<number, string>>(
     new Map()
   );
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isSharing, setIsSharing] = useState(false);
 
   const loadReceipts = useCallback(async () => {
-    let query = db.receipts.orderBy('createdAt').reverse();
+    const query = db.receipts.orderBy('createdAt').reverse();
     const allReceipts = await query.toArray();
     const filtered =
       filter === 'all'
@@ -50,6 +53,98 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
     };
   }, []);
 
+  // 選択モードを切り替え
+  const toggleSelectMode = () => {
+    if (selectMode) {
+      setSelectedIds(new Set());
+    }
+    setSelectMode(!selectMode);
+  };
+
+  // 個別の選択切り替え
+  const toggleSelection = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // 未送信をすべて選択
+  const selectAllUnsent = () => {
+    const unsentIds = receipts
+      .filter((r) => r.status === 'unsent' && r.id !== undefined)
+      .map((r) => r.id as number);
+    setSelectedIds(new Set(unsentIds));
+  };
+
+  // まとめてLINE送信
+  const handleBatchShare = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    setIsSharing(true);
+
+    try {
+      const selectedReceipts = receipts.filter(
+        (r) => r.id !== undefined && selectedIds.has(r.id)
+      );
+
+      const files: File[] = selectedReceipts.map(
+        (r, i) =>
+          new File([r.image], `receipt_${r.id || i}.jpg`, {
+            type: r.image.type || 'image/jpeg',
+          })
+      );
+
+      if (navigator.share && navigator.canShare({ files })) {
+        await navigator.share({
+          title: `領収書 ${files.length}枚`,
+          text: `領収書 ${files.length}枚を送信します`,
+          files,
+        });
+
+        // 共有成功 → 送信済みにマーク
+        for (const id of selectedIds) {
+          await updateReceiptStatus(id, 'sent');
+        }
+        setSelectedIds(new Set());
+        setSelectMode(false);
+        loadReceipts();
+      } else {
+        alert('このブラウザでは複数ファイルの共有に対応していません');
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        console.error('共有に失敗:', err);
+      }
+    } finally {
+      setIsSharing(false);
+    }
+  }, [selectedIds, receipts, loadReceipts]);
+
+  // カメラロールに保存
+  const handleSaveToPhotos = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+
+    const selectedReceipts = receipts.filter(
+      (r) => r.id !== undefined && selectedIds.has(r.id)
+    );
+
+    for (const receipt of selectedReceipts) {
+      const url = URL.createObjectURL(receipt.image);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `receipt_${receipt.id}.jpg`;
+      a.click();
+      URL.revokeObjectURL(url);
+      // ダウンロード間に少し待つ
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }, [selectedIds, receipts]);
+
   const formatDate = (date: Date) => {
     const d = new Date(date);
     const month = d.getMonth() + 1;
@@ -64,6 +159,24 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
 
   return (
     <div className="receipt-list">
+      {/* ヘッダーアクション */}
+      <div className="list-header">
+        <button
+          className={`select-mode-button ${selectMode ? 'active' : ''}`}
+          onClick={toggleSelectMode}
+        >
+          {selectMode ? '完了' : '選択'}
+        </button>
+        {selectMode && (
+          <button
+            className="select-all-button"
+            onClick={selectAllUnsent}
+          >
+            未送信を全選択
+          </button>
+        )}
+      </div>
+
       {/* フィルタータブ */}
       <div className="filter-tabs">
         <button
@@ -122,8 +235,14 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
           {receipts.map((receipt) => (
             <button
               key={receipt.id}
-              className="receipt-card"
-              onClick={() => onSelect(receipt)}
+              className={`receipt-card ${selectMode && selectedIds.has(receipt.id!) ? 'selected' : ''}`}
+              onClick={() => {
+                if (selectMode) {
+                  toggleSelection(receipt.id!);
+                } else {
+                  onSelect(receipt);
+                }
+              }}
             >
               <div className="receipt-card-image">
                 <img
@@ -131,11 +250,19 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
                   alt={`領収書 ${receipt.id}`}
                   loading="lazy"
                 />
-                <span
-                  className={`status-badge ${receipt.status}`}
-                >
-                  {receipt.status === 'unsent' ? '未送信' : '送信済み'}
-                </span>
+                {selectMode ? (
+                  <span
+                    className={`select-checkbox ${selectedIds.has(receipt.id!) ? 'checked' : ''}`}
+                  >
+                    {selectedIds.has(receipt.id!) && '✓'}
+                  </span>
+                ) : (
+                  <span
+                    className={`status-badge ${receipt.status}`}
+                  >
+                    {receipt.status === 'unsent' ? '未送信' : '送信済み'}
+                  </span>
+                )}
               </div>
               <div className="receipt-card-info">
                 <span className="receipt-date">
@@ -149,6 +276,43 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
               </div>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* 一括アクションバー */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="batch-action-bar">
+          <span className="batch-count">{selectedIds.size}枚 選択中</span>
+          <div className="batch-buttons">
+            <button
+              className="batch-button save-button"
+              onClick={handleSaveToPhotos}
+              title="カメラロールに保存"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              保存
+            </button>
+            <button
+              className="batch-button share-button"
+              onClick={handleBatchShare}
+              disabled={isSharing}
+            >
+              {isSharing ? (
+                <div className="shutter-spinner small" />
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                  <polyline points="16 6 12 2 8 6" />
+                  <line x1="12" y1="2" x2="12" y2="15" />
+                </svg>
+              )}
+              LINE送信
+            </button>
+          </div>
         </div>
       )}
     </div>
