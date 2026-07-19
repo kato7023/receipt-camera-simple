@@ -15,7 +15,7 @@ export default defineConfig({
       manifest: {
         name: 'レシートカメラ',
         short_name: 'レシート',
-        description: '領収書を撮影して管理するPWA',
+        description: '領収書を端末内だけで撮影・管理するPWA',
         theme_color: '#0B0D17',
         background_color: '#0B0D17',
         display: 'standalone',
@@ -43,36 +43,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365, // 1年
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'gstatic-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-        ],
+        // 画像・メモを外部へ送信しない。静的アセットのみをPWAへキャッシュする。
       },
     }),
   ],

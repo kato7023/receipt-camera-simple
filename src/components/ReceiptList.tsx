@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { db, updateReceiptStatus, updateReceiptSaved, deleteReceipts, type Receipt } from '../db';
 
 interface ReceiptListProps {
@@ -19,10 +19,13 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSharing, setIsSharing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const loadSequence = useRef(0);
 
   const loadReceipts = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     const query = db.receipts.orderBy('createdAt').reverse();
     const all = await query.toArray();
+    if (sequence !== loadSequence.current) return;
     setAllReceipts(all);
 
     let filtered: Receipt[];
@@ -63,7 +66,12 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
     return () => {
       thumbnailUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, []);
+  }, [thumbnailUrls]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setShowDeleteConfirm(false);
+  }, [filter]);
 
   // 選択モードを切り替え
   const toggleSelectMode = () => {

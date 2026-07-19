@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import CameraView from './components/CameraView';
 import ReceiptList from './components/ReceiptList';
 import ReceiptDetail from './components/ReceiptDetail';
@@ -10,6 +10,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('camera');
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    // iOSの容量整理によるIndexedDB消失を軽減する。非対応ブラウザでは何もしない。
+    void navigator.storage?.persist?.().catch(() => undefined);
+  }, []);
 
   const handleCapture = useCallback(() => {
     setRefreshKey((prev) => prev + 1);

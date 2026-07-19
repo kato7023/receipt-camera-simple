@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   type Receipt,
   updateReceiptStatus,
@@ -19,6 +19,9 @@ export default function ReceiptDetail({
 }: ReceiptDetailProps) {
   const [imageUrl, setImageUrl] = useState<string>('');
   const [memo, setMemo] = useState(receipt.memo || '');
+  const [isSavingMemo, setIsSavingMemo] = useState(false);
+  const [memoSaved, setMemoSaved] = useState(true);
+  const lastSavedMemo = useRef(receipt.memo || '');
   const [status, setStatus] = useState(receipt.status);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -73,9 +76,31 @@ export default function ReceiptDetail({
 
   const handleMemoSave = useCallback(async () => {
     if (!receipt.id) return;
-    await updateReceiptMemo(receipt.id, memo);
-    onUpdate();
+    if (memo === lastSavedMemo.current) return;
+    setIsSavingMemo(true);
+    try {
+      await updateReceiptMemo(receipt.id, memo);
+      lastSavedMemo.current = memo;
+      setMemoSaved(true);
+      onUpdate();
+    } catch (err) {
+      console.error('メモの保存に失敗:', err);
+      setMemoSaved(false);
+    } finally {
+      setIsSavingMemo(false);
+    }
   }, [receipt.id, memo, onUpdate]);
+
+  // iOSではキーボード表示中にblurが発生しないことがあるため、blurだけに
+  // 頼らず入力後に自動保存する。明示的な保存表示も出して入力消失を防ぐ。
+  useEffect(() => {
+    if (memo === lastSavedMemo.current) return;
+    setMemoSaved(false);
+    const timer = window.setTimeout(() => {
+      void handleMemoSave();
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [memo, handleMemoSave]);
 
   const handleDelete = useCallback(async () => {
     if (!receipt.id) return;
@@ -152,9 +177,12 @@ export default function ReceiptDetail({
               className="memo-input"
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
-              onBlur={handleMemoSave}
+              onBlur={() => void handleMemoSave()}
               placeholder="メモを入力..."
             />
+            <span className={`memo-save-status ${memoSaved ? 'saved' : ''}`} aria-live="polite">
+              {isSavingMemo ? '保存中...' : memoSaved ? '保存済み' : '自動保存中...'}
+            </span>
           </div>
         </div>
 

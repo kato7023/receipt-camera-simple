@@ -27,6 +27,9 @@ class ReceiptDB extends Dexie {
         }
       });
     });
+    this.version(3).stores({
+      receipts: '++id, createdAt, status, saved',
+    });
   }
 }
 
@@ -94,7 +97,7 @@ export async function updateReceiptStatus(
   id: number,
   status: 'unsent' | 'sent'
 ): Promise<void> {
-  await db.receipts.update(id, { status });
+  await updateReceiptFields([id], { status });
 }
 
 /**
@@ -104,7 +107,40 @@ export async function updateReceiptMemo(
   id: number,
   memo: string
 ): Promise<void> {
-  await db.receipts.update(id, { memo });
+  await updateReceiptFields([id], { memo });
+}
+
+/**
+ * Safari/WebKitでは、IndexedDBから読み出したBlobを含むレコードを
+ * update()で直接書き戻すとBlobハンドルが壊れることがある。メタ情報の
+ * 更新時も画像を実バイト列から再構築して保存し、撮影画像を保全する。
+ */
+async function updateReceiptFields(
+  ids: number[],
+  changes: Partial<Omit<Receipt, 'id' | 'image' | 'thumbnail'>>
+): Promise<void> {
+  const prepared: Receipt[] = [];
+  for (const id of ids) {
+    const receipt = await db.receipts.get(id);
+    if (!receipt) continue;
+
+    const [imageBuffer, thumbnailBuffer] = await Promise.all([
+      receipt.image.arrayBuffer(),
+      receipt.thumbnail.arrayBuffer(),
+    ]);
+    prepared.push({
+      ...receipt,
+      ...changes,
+      image: new Blob([imageBuffer], { type: receipt.image.type }),
+      thumbnail: new Blob([thumbnailBuffer], { type: receipt.thumbnail.type }),
+    });
+  }
+
+  await db.transaction('rw', db.receipts, async () => {
+    for (const receipt of prepared) {
+      await db.receipts.put(receipt);
+    }
+  });
 }
 
 /**
@@ -114,7 +150,7 @@ export async function updateReceiptSaved(
   id: number,
   saved: boolean
 ): Promise<void> {
-  await db.receipts.update(id, { saved });
+  await updateReceiptFields([id], { saved });
 }
 
 /**
