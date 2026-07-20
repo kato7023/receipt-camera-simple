@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "clean:dist": "node scripts/clean-dist.mjs dist",
     "build": "tsc -b && vite build",
+    "prebuild": "npm run clean:dist",
     "lint": "oxlint",
     "preview": "vite preview"
   },
