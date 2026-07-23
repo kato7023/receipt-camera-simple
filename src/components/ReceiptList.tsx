@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { cloneBlob, db, updateReceiptStatus, updateReceiptSaved, deleteReceipts, type Receipt } from '../db';
+import { cloneBlob, db, updateReceiptGroupComment, updateReceiptStatus, updateReceiptSaved, deleteReceipts, type Receipt } from '../db';
 
 interface ReceiptListProps {
   onSelect: (receipt: Receipt) => void;
@@ -8,10 +8,18 @@ interface ReceiptListProps {
 
 type FilterType = 'unsent' | 'unsaved' | 'sent' | 'all';
 
+function normalizeSearch(value: string): string {
+  return value.trim().toLocaleLowerCase().replace(/[\s　]/g, '');
+}
+
 export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [allReceipts, setAllReceipts] = useState<Receipt[]>([]);
   const [filter, setFilter] = useState<FilterType>('unsent');
+  const [searchText, setSearchText] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [groupCommentFilter, setGroupCommentFilter] = useState<string[]>([]);
+  const [includeUngrouped, setIncludeUngrouped] = useState(false);
   const [thumbnailUrls, setThumbnailUrls] = useState<Map<number, string>>(
     new Map()
   );
@@ -43,6 +51,27 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
       default:
         filtered = all;
     }
+
+    const search = normalizeSearch(searchText);
+    if (search) {
+      filtered = filtered.filter((receipt) => {
+        const searchable = normalizeSearch([
+          receipt.memo,
+          receipt.groupComment,
+          receipt.status === 'unsent' ? '未送信' : '送信済',
+          receipt.saved ? '保存済' : '未保存',
+          new Date(receipt.createdAt).toLocaleDateString('ja-JP'),
+        ].join(' '));
+        return searchable.includes(search);
+      });
+    }
+    if (groupCommentFilter.length > 0 || includeUngrouped) {
+      filtered = filtered.filter((receipt) => (
+        receipt.groupComment
+          ? groupCommentFilter.includes(receipt.groupComment)
+          : includeUngrouped
+      ));
+    }
     setReceipts(filtered);
 
     // サムネイルURLを生成
@@ -58,7 +87,7 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
       prev.forEach((url) => URL.revokeObjectURL(url));
       return urls;
     });
-  }, [filter]);
+  }, [filter, groupCommentFilter, includeUngrouped, searchText]);
 
   useEffect(() => {
     loadReceipts();
@@ -73,7 +102,7 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
   useEffect(() => {
     setSelectedIds(new Set());
     setShowDeleteConfirm(false);
-  }, [filter]);
+  }, [filter, groupCommentFilter, includeUngrouped, searchText]);
 
   // 選択モードを切り替え
   const toggleSelectMode = () => {
@@ -142,6 +171,9 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
 
         for (const id of selectedIds) {
           await updateReceiptStatus(id, 'sent');
+        }
+        if (batchComment.trim()) {
+          await updateReceiptGroupComment(Array.from(selectedIds), batchComment.trim());
         }
         setSelectedIds(new Set());
         setBatchComment('');
@@ -218,6 +250,15 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
     return `${month}/${day} ${hours}:${minutes}`;
   };
 
+  const groupComments = Array.from(
+    new Set(allReceipts.map((receipt) => receipt.groupComment).filter(Boolean))
+  ).sort();
+  const hasAdvancedFilter = groupCommentFilter.length > 0 || includeUngrouped;
+  const clearAdvancedFilters = () => {
+    setGroupCommentFilter([]);
+    setIncludeUngrouped(false);
+  };
+
   // カウント（全データから）
   const unsentCount = allReceipts.filter((r) => r.status === 'unsent').length;
   const unsavedCount = allReceipts.filter((r) => !r.saved).length;
@@ -242,6 +283,72 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
           </button>
         )}
       </div>
+
+      {/* 検索・絞り込み */}
+      <div className="list-search-row">
+        <div className="list-search-input-wrap">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="16.5" y1="16.5" x2="21" y2="21" />
+          </svg>
+          <input
+            type="search"
+            className="list-search-input"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="領収書を検索"
+            aria-label="領収書を検索"
+          />
+          {searchText && (
+            <button className="list-search-clear" onClick={() => setSearchText('')} aria-label="検索をクリア">×</button>
+          )}
+        </div>
+        <button
+          className={`list-filter-button ${showAdvancedFilters || hasAdvancedFilter ? 'active' : ''}`}
+          onClick={() => setShowAdvancedFilters((value) => !value)}
+        >
+          絞り込み
+        </button>
+      </div>
+
+      {(searchText || hasAdvancedFilter) && (
+        <div className="active-filter-chips">
+          {searchText && (
+            <span className="active-filter-chip">
+              検索: {searchText}
+              <button onClick={() => setSearchText('')} aria-label="検索条件を削除">×</button>
+            </span>
+          )}
+          {groupCommentFilter.length > 0 && (
+            <span className="active-filter-chip">
+              全体コメント: {groupCommentFilter.join('・')}
+              <button onClick={() => setGroupCommentFilter([])} aria-label="全体コメント条件を削除">×</button>
+            </span>
+          )}
+          {includeUngrouped && (
+            <span className="active-filter-chip">
+              全体コメントなし
+              <button onClick={() => setIncludeUngrouped(false)} aria-label="未設定条件を削除">×</button>
+            </span>
+          )}
+          <button className="clear-filters-button" onClick={() => { setSearchText(''); clearAdvancedFilters(); }}>すべて解除</button>
+        </div>
+      )}
+
+      {showAdvancedFilters && (
+        <div className="advanced-filter-panel">
+          <label>
+            全体コメント（複数選択）
+            <select multiple value={groupCommentFilter} onChange={(e) => setGroupCommentFilter(Array.from(e.target.selectedOptions, (option) => option.value))}>
+              {groupComments.map((comment) => <option key={comment} value={comment}>{comment}</option>)}
+            </select>
+            <span className="filter-checkbox">
+              <input type="checkbox" checked={includeUngrouped} onChange={(e) => setIncludeUngrouped(e.target.checked)} />
+              全体コメントなしを含む
+            </span>
+          </label>
+        </div>
+      )}
 
       {/* フィルタータブ */}
       <div className="filter-tabs">
@@ -349,6 +456,11 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
                 {receipt.memo && (
                   <span className="receipt-memo-preview">
                     {receipt.memo}
+                  </span>
+                )}
+                {receipt.groupComment && (
+                  <span className="receipt-group-comment-preview">
+                    {receipt.groupComment}
                   </span>
                 )}
               </div>

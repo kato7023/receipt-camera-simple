@@ -8,6 +8,8 @@ export interface Receipt {
   status: 'unsent' | 'sent';
   saved: boolean;
   memo: string;
+  /** 一括送信時の全体コメント。グループ代替として利用する。 */
+  groupComment: string;
 }
 
 class ReceiptDB extends Dexie {
@@ -29,6 +31,13 @@ class ReceiptDB extends Dexie {
     });
     this.version(3).stores({
       receipts: '++id, createdAt, status, saved',
+    });
+    this.version(4).stores({
+      receipts: '++id, createdAt, status, saved, groupComment',
+    }).upgrade((tx) => {
+      return tx.table('receipts').toCollection().modify((receipt) => {
+        if (receipt.groupComment === undefined) receipt.groupComment = '';
+      });
     });
   }
 }
@@ -82,7 +91,11 @@ export async function createThumbnail(
 /**
  * 領収書を保存する
  */
-export async function saveReceipt(imageBlob: Blob, memo = ''): Promise<number> {
+export async function saveReceipt(
+  imageBlob: Blob,
+  memo = '',
+  groupComment = ''
+): Promise<number> {
   const thumbnail = await createThumbnail(imageBlob);
   const id = await db.receipts.add({
     image: imageBlob,
@@ -91,6 +104,7 @@ export async function saveReceipt(imageBlob: Blob, memo = ''): Promise<number> {
     status: 'unsent',
     saved: false,
     memo,
+    groupComment,
   });
   return id as number;
 }
@@ -113,6 +127,14 @@ export async function updateReceiptMemo(
   memo: string
 ): Promise<void> {
   await updateReceiptFields([id], { memo });
+}
+
+/** 領収書の全体コメント（グループ代替）を更新する */
+export async function updateReceiptGroupComment(
+  ids: number[],
+  groupComment: string
+): Promise<void> {
+  await updateReceiptFields(ids, { groupComment });
 }
 
 /**

@@ -142,7 +142,6 @@ export default function CameraView({ onCapture }: CameraViewProps) {
         </button>
 
         <div className="camera-memo-section">
-          <label className="memo-label" htmlFor="camera-memo">領収書メモ</label>
           <input
             id="camera-memo"
             type="text"
@@ -150,6 +149,7 @@ export default function CameraView({ onCapture }: CameraViewProps) {
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             placeholder="メモを入力..."
+            aria-label="メモ"
           />
           {memoHistory.length > 0 && (
             <div className="memo-history" aria-label="最近使ったメモ">
