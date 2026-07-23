@@ -154,7 +154,11 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
       );
 
       const memoText = selectedReceipts
-        .map((receipt) => `領収書メモ：${receipt.memo || ''}`)
+        .map((receipt, index) => {
+          const memo = receipt.memo.trim();
+          return memo ? `${index + 1}枚目メモ：${memo}` : '';
+        })
+        .filter(Boolean)
         .join('\n');
       const text = [
         `領収書 ${files.length}枚を送信します。`,
