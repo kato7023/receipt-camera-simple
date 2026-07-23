@@ -127,6 +127,15 @@ body {
   background-clip: text;
 }
 
+.app-version {
+  position: absolute;
+  right: var(--space-md);
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+  font-family: monospace;
+}
+
 /* ---------- Main Content ---------- */
 .app-main {
   flex: 1;
@@ -240,6 +249,85 @@ body {
   border-radius: var(--radius-lg);
   overflow: hidden;
   position: relative;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.camera-preview-area:active {
+  transform: scale(0.98);
+}
+
+.camera-preview-area.processing {
+  cursor: wait;
+}
+
+.album-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.album-button:active {
+  transform: scale(0.97);
+}
+
+.album-button:disabled,
+.camera-preview-area:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.camera-memo-section {
+  width: 100%;
+  max-width: 420px;
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.camera-memo-section .memo-input {
+  width: 100%;
+}
+
+.memo-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.memo-history-button {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.memo-history-button:active {
+  border-color: var(--accent-amber);
+  color: var(--accent-amber);
 }
 
 .camera-icon-area {
@@ -685,6 +773,9 @@ body {
   animation: slideUp var(--transition-normal) ease-out;
   max-width: 480px;
   margin: 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-sm);
 }
 
 .batch-count {
@@ -693,9 +784,28 @@ body {
   color: var(--accent-amber);
 }
 
+.batch-comment-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 52px;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.batch-comment-input:focus {
+  outline: none;
+  border-color: var(--accent-amber);
+}
+
 .batch-buttons {
   display: flex;
   gap: var(--space-sm);
+  justify-content: flex-end;
 }
 
 .batch-button {

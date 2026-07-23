@@ -53,6 +53,7 @@ export default function App() {
           </svg>
           <h1>レシートカメラ</h1>
         </div>
+        <span className="app-version">v{__APP_VERSION__}</span>
       </header>
 
       {/* メインコンテンツ */}

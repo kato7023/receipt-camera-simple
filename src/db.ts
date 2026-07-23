@@ -35,6 +35,11 @@ class ReceiptDB extends Dexie {
 
 export const db = new ReceiptDB();
 
+/** IndexedDBのBlobを新しいBlobとして再構築する。 */
+export async function cloneBlob(blob: Blob): Promise<Blob> {
+  return new Blob([await blob.arrayBuffer()], { type: blob.type });
+}
+
 /**
  * 画像Blobからサムネイルを生成する
  */
@@ -77,7 +82,7 @@ export async function createThumbnail(
 /**
  * 領収書を保存する
  */
-export async function saveReceipt(imageBlob: Blob): Promise<number> {
+export async function saveReceipt(imageBlob: Blob, memo = ''): Promise<number> {
   const thumbnail = await createThumbnail(imageBlob);
   const id = await db.receipts.add({
     image: imageBlob,
@@ -85,7 +90,7 @@ export async function saveReceipt(imageBlob: Blob): Promise<number> {
     createdAt: new Date(),
     status: 'unsent',
     saved: false,
-    memo: '',
+    memo,
   });
   return id as number;
 }

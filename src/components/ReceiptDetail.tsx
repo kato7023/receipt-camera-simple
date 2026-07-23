@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
+  db,
+  cloneBlob,
   type Receipt,
   updateReceiptStatus,
   updateReceiptMemo,
@@ -27,10 +29,25 @@ export default function ReceiptDetail({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
-    const url = URL.createObjectURL(receipt.image);
-    setImageUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [receipt.image]);
+    let active = true;
+    let url = '';
+    void (async () => {
+      const freshReceipt = receipt.id
+        ? await db.receipts.get(receipt.id)
+        : receipt;
+      const image = await cloneBlob(freshReceipt?.image ?? receipt.image);
+      url = URL.createObjectURL(image);
+      if (active) {
+        setImageUrl(url);
+      } else {
+        URL.revokeObjectURL(url);
+      }
+    })();
+    return () => {
+      active = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [receipt]);
 
   const handleShare = useCallback(async () => {
     if (!receipt.id) return;

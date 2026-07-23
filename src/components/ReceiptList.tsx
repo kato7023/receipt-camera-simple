@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { db, updateReceiptStatus, updateReceiptSaved, deleteReceipts, type Receipt } from '../db';
+import { cloneBlob, db, updateReceiptStatus, updateReceiptSaved, deleteReceipts, type Receipt } from '../db';
 
 interface ReceiptListProps {
   onSelect: (receipt: Receipt) => void;
@@ -17,6 +17,7 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
   );
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [batchComment, setBatchComment] = useState('');
   const [isSharing, setIsSharing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const loadSequence = useRef(0);
@@ -48,7 +49,8 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
     const urls = new Map<number, string>();
     for (const receipt of filtered) {
       if (receipt.id !== undefined) {
-        const url = URL.createObjectURL(receipt.thumbnail);
+        const thumbnail = await cloneBlob(receipt.thumbnail);
+        const url = URL.createObjectURL(thumbnail);
         urls.set(receipt.id, url);
       }
     }
@@ -77,6 +79,7 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
   const toggleSelectMode = () => {
     if (selectMode) {
       setSelectedIds(new Set());
+      setBatchComment('');
       setShowDeleteConfirm(false);
     }
     setSelectMode(!selectMode);
@@ -121,10 +124,19 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
           })
       );
 
+      const memoText = selectedReceipts
+        .map((receipt) => `領収書メモ：${receipt.memo || ''}`)
+        .join('\n');
+      const text = [
+        `領収書 ${files.length}枚を送信します。`,
+        batchComment.trim(),
+        memoText,
+      ].filter(Boolean).join('\n');
+
       if (navigator.share && navigator.canShare({ files })) {
         await navigator.share({
           title: `領収書 ${files.length}枚`,
-          text: `領収書 ${files.length}枚を送信します`,
+          text,
           files,
         });
 
@@ -132,6 +144,7 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
           await updateReceiptStatus(id, 'sent');
         }
         setSelectedIds(new Set());
+        setBatchComment('');
         setSelectMode(false);
         loadReceipts();
       } else {
@@ -144,7 +157,7 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
     } finally {
       setIsSharing(false);
     }
-  }, [selectedIds, receipts, loadReceipts]);
+  }, [batchComment, selectedIds, receipts, loadReceipts]);
 
   // カメラロールに保存（Web Share API経由）
   const handleSaveToPhotos = useCallback(async () => {
@@ -190,6 +203,7 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
     if (selectedIds.size === 0) return;
     await deleteReceipts(Array.from(selectedIds));
     setSelectedIds(new Set());
+    setBatchComment('');
     setSelectMode(false);
     setShowDeleteConfirm(false);
     loadReceipts();
@@ -347,6 +361,13 @@ export default function ReceiptList({ onSelect, refreshKey }: ReceiptListProps) 
       {selectMode && selectedIds.size > 0 && (
         <div className="batch-action-bar">
           <span className="batch-count">{selectedIds.size}枚 選択中</span>
+          <textarea
+            className="batch-comment-input"
+            value={batchComment}
+            onChange={(e) => setBatchComment(e.target.value)}
+            placeholder="全体コメントを入力..."
+            rows={2}
+          />
           <div className="batch-buttons">
             {showDeleteConfirm ? (
               <>
